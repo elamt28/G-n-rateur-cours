@@ -8,15 +8,16 @@ from pptx.dml.color import RGBColor
 # 1. CONFIGURATION
 genai.configure(api_key=st.secrets["API_KEY"])
 
-# 2. MOTEUR DE DESIGN ROBUSTE (Zéro AttributeError)
+# 2. MOTEUR DE DESIGN ROBUSTE (Correction fore_color)
 def appliquer_style_cfa(slide, titre_texte):
-    # Création manuelle du bandeau bleu (Rectangle)
+    # Création du bandeau bleu (Rectangle)
     bandeau = slide.shapes.add_shape(1, 0, 0, Inches(10), Inches(0.8))
     bandeau.fill.solid()
-    bandeau.fill.foreground_color.rgb = RGBColor(0, 82, 204) # Bleu CFA
+    # LA CORRECTION EST ICI : fore_color au lieu de foreground_color
+    bandeau.fill.fore_color.rgb = RGBColor(0, 82, 204) # Bleu CFA
     bandeau.line.visible = False
     
-    # Création manuelle de la boîte de titre par-dessus
+    # Boîte de titre
     txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.1), Inches(9), Inches(0.6))
     tf = txBox.text_frame
     p = tf.paragraphs[0]
@@ -33,20 +34,19 @@ def generer_pptx_premium(diplome, sujet, contenu):
     sections = contenu.split('###')
     for section in sections:
         if len(section.strip()) > 10:
-            slide = prs.slides.add_slide(prs.slide_layouts[6]) # Layout totalement VIDE
+            slide = prs.slides.add_slide(prs.slide_layouts[6]) # Layout vide
             lignes = section.strip().split('\n')
             titre_s = lignes[0].replace('**', '').strip()
             corps_s = '\n'.join(lignes[1:]).strip()
             
             appliquer_style_cfa(slide, titre_s)
             
-            # Gestion Image (Améliorée pour éviter le "nul")
+            # Gestion Image
             image_match = re.search(r'\[IMG:(.*?)\]', corps_s)
             has_image = False
             if image_match:
                 prompt_img = image_match.group(1).strip()
                 corps_s = corps_s.replace(image_match.group(0), '').strip()
-                # On booste le prompt d'image en coulisse
                 url = f"https://image.pollinations.ai/prompt/high_quality_professional_photography_{prompt_img.replace(' ', '_')}_cinematic_lighting?width=600&height=450&nologo=true"
                 try:
                     img_data = requests.get(url, timeout=10).content
@@ -91,7 +91,7 @@ sujet = st.text_input("Sujet de la mission :")
 
 if st.button("🚀 Lancer la production Premium"):
     if sujet:
-        with st.spinner("L'IA forge vos diapositives..."):
+        with st.spinner("L'IA prépare vos supports..."):
             try:
                 moteurs = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                 model = genai.GenerativeModel(moteurs[0])
