@@ -5,36 +5,32 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 
-# 1. CONFIGURATION ET SÉCURITÉ
+# 1. CONFIGURATION
 genai.configure(api_key=st.secrets["API_KEY"])
 
-# 2. MOTEUR DE DESIGN POWERPOINT (Style Interactif CFA)
+# 2. DESIGN POWERPOINT INTERACTIF
 def appliquer_style_cfa(slide, titre_texte, est_reponse=False):
     couleur_fond = RGBColor(180, 0, 0) if est_reponse else RGBColor(0, 82, 204)
-    # Bandeau principal
     bandeau = slide.shapes.add_shape(1, 0, 0, Inches(10), Inches(0.7))
     bandeau.fill.solid()
     bandeau.fill.fore_color.rgb = couleur_fond
     bandeau.line.visible = False
-    # Liseré Orange Chartres
     lisere = slide.shapes.add_shape(1, 0, Inches(0.7), Inches(10), Inches(0.05))
     lisere.fill.solid()
     lisere.fill.fore_color.rgb = RGBColor(255, 102, 0)
     lisere.line.visible = False
-    # Titre
     txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.05), Inches(9), Inches(0.6))
     p = txBox.text_frame.paragraphs[0]
-    p.text = ( "CORRECTION : " if est_reponse else "DÉFI : ") + titre_texte
+    p.text = ("RÉPONSE : " if est_reponse else "DÉFI : ") + titre_texte
     p.font.bold, p.font.size, p.font.color.rgb = True, Pt(22), RGBColor(255, 255, 255)
 
 def ajouter_paire_slides(prs, titre, question_txt, reponse_txt, img_prompt=None):
-    # --- SLIDE DÉFI (Bleu) ---
+    # Slide Défi
     slide_q = prs.slides.add_slide(prs.slide_layouts[6])
-    appliquer_style_cfa(slide_q, titre, est_reponse=False)
+    appliquer_style_cfa(slide_q, titre, False)
     has_img = False
     if img_prompt:
-        seed = random.randint(1, 99999)
-        url = f"https://image.pollinations.ai/prompt/cute_vibrant_cartoon_illustration_of_{img_prompt.replace(' ', '_')}?width=512&height=512&nologo=true&seed={seed}"
+        url = f"https://image.pollinations.ai/prompt/cute_vibrant_cartoon_illustration_of_{img_prompt.replace(' ', '_')}?width=512&height=512&nologo=true"
         try:
             img_data = requests.get(url, timeout=5).content
             slide_q.shapes.add_picture(io.BytesIO(img_data), Inches(5.6), Inches(1.2), width=Inches(4))
@@ -48,10 +44,9 @@ def ajouter_paire_slides(prs, titre, question_txt, reponse_txt, img_prompt=None)
             p = tf.add_paragraph()
             p.text = "• " + l.replace('*', '').strip()
             p.font.size, p.font.color.rgb = Pt(17), RGBColor(30, 30, 30)
-
-    # --- SLIDE RÉPONSE (Rouge) ---
+    # Slide Réponse
     slide_r = prs.slides.add_slide(prs.slide_layouts[6])
-    appliquer_style_cfa(slide_r, titre, est_reponse=True)
+    appliquer_style_cfa(slide_r, titre, True)
     txBox_r = slide_r.shapes.add_textbox(Inches(0.5), Inches(1.2), Inches(9), Inches(4))
     tf_r = txBox_r.text_frame
     tf_r.word_wrap = True
@@ -61,39 +56,50 @@ def ajouter_paire_slides(prs, titre, question_txt, reponse_txt, img_prompt=None)
             p.text = "✔ " + l.replace('*', '').strip()
             p.font.size, p.font.color.rgb = Pt(17), RGBColor(0, 100, 0)
 
-# 3. INTERFACE UTILISATEUR
-st.set_page_config(page_title="Générateur de cours CFA", layout="wide")
-st.title("👨‍🏫 Générateur de cours : Édition Studio")
+# 3. INTERFACE STREAMLIT
+st.set_page_config(page_title="Générateur de cours", layout="wide")
+st.title("🛠️ Générateur de cours")
 
 if 'liste' not in st.session_state:
     st.session_state.liste = ["BP Boucher", "BP Boulanger", "Bac Pro Maintenance Véhicule", "BTS Maintenance Véhicule", "CAP EPC", "BP Coiffure", "AMLHR"]
 
-with st.sidebar:
-    st.header("⚙️ Paramètres")
-    nouveau = st.text_input("Ajouter un diplôme :")
-    if st.button("Ajouter") and nouveau:
-        st.session_state.liste.append(nouveau)
-        st.rerun()
-
 col1, col2 = st.columns(2)
 with col1:
     diplome = st.selectbox("Diplôme :", st.session_state.liste)
-    sujet = st.text_input("Sujet de la leçon :", placeholder="ex: Le calcul de la marge")
+    sujet = st.text_input("Sujet de la leçon :")
 with col2:
     lieu = st.text_input("Lieu du scénario :", value="Chartres")
 
-if st.button("🚀 GÉNÉRER LE COURS ET LE POWERPOINT"):
+if st.button("🚀 GÉNÉRER LE PACK PÉDAGOGIQUE"):
     if sujet:
-        with st.spinner("L'IA consulte les référentiels et prépare les supports..."):
+        with st.spinner("Conception du cours et des diapositives..."):
             moteur = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods][0]
             model = genai.GenerativeModel(moteur)
             
-            prompt = f"""Expert pédagogie CFA Chartres. Crée un cours complet pour {diplome} sur {sujet}.
-            Lieu: {lieu}. Ton: ludique, humour, jeux de mots. 
+            prompt_instr = f"Expert pédagogie CFA Chartres. Crée un cours complet pour {diplome} sur {sujet} à {lieu}. Respecte le référentiel {diplome}. Ton ludique, humour."
+            prompt_struct = "STRUCTURE : ### SECTION: [Titre] IMAGE: [Description cartoon] QUESTION: [Défi + codes référentiel] REPONSE: [Solution] ### (6 duels)"
             
-            STRUCTURE OBLIGATOIRE DU RÉCIT (Utilise les balises ### SECTION:, IMAGE:, QUESTION:, REPONSE:) :
+            res = model.generate_content(prompt_instr + prompt_struct).text
             
-            ### SECTION: Objectif et Référentiel
-            IMAGE: cartoon book and gears
-            QUESTION: Quels sont les objectifs et les codes du référentiel {diplome} pour ce cours ?
-            REPONSE: [Détaille les objectifs et les
+            t1, t2 = st.tabs(["📝 Document Word (Apprentis)", "📥 PowerPoint Interactif"])
+            with t1:
+                st.info("Copie ce texte dans Word.")
+                display_txt = re.sub(r'IMAGE:.*', '', res).replace('SECTION:', '##').replace('QUESTION:', '### Défi :').replace('REPONSE:', '### Correction :')
+                st.markdown(display_txt)
+            with t2:
+                prs = Presentation()
+                prs.slide_width, prs.slide_height = Inches(10), Inches(5.625)
+                duels = res.split('###')
+                for d in duels:
+                    if "SECTION:" in d:
+                        try:
+                            titre = re.search(r"SECTION:(.*)", d).group(1).strip()
+                            img = re.search(r"IMAGE:(.*)", d).group(1).strip()
+                            ques = re.search(r"QUESTION:([\s\S]*?)REPONSE:", d).group(1).strip()
+                            rep = re.search(r"REPONSE:([\s\S]*)", d).group(1).strip()
+                            ajouter_paire_slides(prs, titre, ques, rep, img)
+                        except: pass
+                buf = io.BytesIO()
+                prs.save(buf)
+                buf.seek(0)
+                st.download_button("📥 Télécharger le PowerPoint Interactif", buf, f"Cours_{sujet}.pptx")
