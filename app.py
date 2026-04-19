@@ -9,7 +9,7 @@ from pptx.dml.color import RGBColor
 
 # 1. CONFIGURATION
 # Remplacer par la vraie clé API (ex: "AIzaSy...")
-API_KEY = "MA_CLE_SECRETE" 
+API_KEY = st.secrets["API_KEY"]
 genai.configure(api_key=API_KEY)
 
 # 2. LE MOTEUR POWERPOINT (Anti-débordement + Images)
@@ -90,7 +90,7 @@ with col2:
     sujet = st.text_input("Sujet de la leçon :", placeholder="ex: La gestion des stocks")
 
 if st.button("🚀 GÉNÉRER LE COURS & LE POWERPOINT"):
-    if sujet and API_KEY != "TON_API_KEY":
+    if sujet:
         with st.spinner("L'IA génère les textes, structure les diapos et dessine les images..."):
             try:
                 # Scanner de moteur
