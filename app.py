@@ -8,142 +8,129 @@ from pptx.dml.color import RGBColor
 # 1. CONFIGURATION
 genai.configure(api_key=st.secrets["API_KEY"])
 
-# 2. DESIGN DU POWERPOINT (Style CFA Chartres)
-def appliquer_style_perso(slide, titre_texte, est_correction=False):
-    couleur_fond = RGBColor(180, 0, 0) if est_correction else RGBColor(0, 82, 204)
+# 2. DESIGN ALTERNÉ (Bleu pour Question / Rouge pour Réponse)
+def appliquer_style_interactif(slide, titre_texte, est_reponse=False):
+    couleur_fond = RGBColor(180, 0, 0) if est_reponse else RGBColor(0, 82, 204)
+    
+    # Bandeau
     bandeau = slide.shapes.add_shape(1, 0, 0, Inches(10), Inches(0.7))
     bandeau.fill.solid()
     bandeau.fill.fore_color.rgb = couleur_fond
     bandeau.line.visible = False
+    
+    # Liseré Orange
     lisere = slide.shapes.add_shape(1, 0, Inches(0.7), Inches(10), Inches(0.05))
     lisere.fill.solid()
     lisere.fill.fore_color.rgb = RGBColor(255, 102, 0)
     lisere.line.visible = False
+
+    # Titre
     txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.05), Inches(9), Inches(0.6))
     p = txBox.text_frame.paragraphs[0]
-    p.text = ("CORRIGÉ : " if est_correction else "") + titre_texte
+    p.text = ("RÉPONSE : " if est_reponse else "DÉFI : ") + titre_texte
     p.font.bold, p.font.size, p.font.color.rgb = True, Pt(22), RGBColor(255, 255, 255)
 
-def ajouter_slide_texte(prs, titre, paragraphes, est_correction=False, prompt_img=None):
-    for i in range(0, len(paragraphes), 4):
-        slide = prs.slides.add_slide(prs.slide_layouts[6])
-        t_final = titre + (f" (suite {i//4 + 1})" if i > 0 else "")
-        appliquer_style_perso(slide, t_final, est_correction)
-        
-        has_img = False
-        # Génération d'IMAGE STYLE CARTOON (Seulement si prompt dispo et non correction)
-        if i == 0 and prompt_img and not est_correction:
-            seed = random.randint(1, 99999)
-            # CRITICAL CHANGE: Force strict friendly cartoon style in prompt construction
-            slug = prompt_img.replace(' ', '_').replace('illustration', 'cartoon').replace('colorful', 'vibrant')
-            url = f"https://image.pollinations.ai/prompt/cute_friendly_cartoon_style_illustration_of_{slug}_bright_colors_ Pixarl_style?width=512&height=512&nologo=true&seed={seed}"
-            try:
-                img_data = requests.get(url, timeout=7).content
-                slide.shapes.add_picture(io.BytesIO(img_data), Inches(5.6), Inches(1.2), width=Inches(4))
-                has_img = True
-            except: pass
-            
-        width = Inches(4.8) if has_img else Inches(9)
-        txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.2), width, Inches(4))
-        tf = txBox.text_frame
-        tf.word_wrap = True
-        for p_text in paragraphes[i:i+4]:
-            p = tf.add_paragraph()
-            p.text = "• " + p_text.replace('*', '').strip()
-            p.font.size, p.font.color.rgb = Pt(16), RGBColor(30, 30, 30)
-            p.space_after = Pt(10)
+def ajouter_paire_slides(prs, titre, texte_question, texte_reponse, prompt_img=None):
+    # --- 1. Slide Question (Bleue) ---
+    slide_q = prs.slides.add_slide(prs.slide_layouts[6])
+    appliquer_style_interactif(slide_q, titre, est_reponse=False)
+    
+    has_img = False
+    if prompt_img:
+        seed = random.randint(1, 9999)
+        url = f"https://image.pollinations.ai/prompt/vibrant_colorful_cartoon_of_{prompt_img.replace(' ', '_')}?width=512&height=512&nologo=true&seed={seed}"
+        try:
+            img_data = requests.get(url, timeout=5).content
+            slide_q.shapes.add_picture(io.BytesIO(img_data), Inches(5.6), Inches(1.2), width=Inches(4))
+            has_img = True
+        except: pass
 
-def generer_pptx_v12(diplome, sujet, cours_txt, formateur_txt):
+    txBox_q = slide_q.shapes.add_textbox(Inches(0.5), Inches(1.2), Inches(4.8) if has_img else Inches(9), Inches(4))
+    tf_q = txBox_q.text_frame
+    tf_q.word_wrap = True
+    for line in texte_question.split('\n'):
+        if line.strip():
+            p = tf_q.add_paragraph()
+            p.text = "• " + line.replace('*', '').strip()
+            p.font.size, p.font.color.rgb = Pt(18), RGBColor(30, 30, 30)
+
+    # --- 2. Slide Réponse (Rouge) ---
+    slide_r = prs.slides.add_slide(prs.slide_layouts[6])
+    appliquer_style_interactif(slide_r, titre, est_reponse=True)
+    txBox_r = slide_r.shapes.add_textbox(Inches(0.5), Inches(1.2), Inches(9), Inches(4))
+    tf_r = txBox_r.text_frame
+    tf_r.word_wrap = True
+    for line in texte_reponse.split('\n'):
+        if line.strip():
+            p = tf_r.add_paragraph()
+            p.text = "✔ " + line.replace('*', '').strip()
+            p.font.size, p.font.color.rgb = Pt(18), RGBColor(0, 100, 0) # Vert foncé pour la réussite
+
+def generer_pptx_interactif(cours_dict):
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(10), Inches(5.625)
     
-    sections = cours_txt.split('###')
-    for sec in sections:
-        if len(sec.strip()) > 10:
-            lines = sec.strip().split('\n')
-            titre = lines[0].strip()
-            corps = '\n'.join(lines[1:]).strip()
-            
-            # 1. Detect and Extract Image Prompt
-            img_match = re.search(r'\[IMG:(.*?)\]', corps)
-            p_img = img_match.group(1) if img_match else sujet
-            
-            # 2. GOMME MAGIQUE: Remove all [IMG:...] tags before sending to PPT
-            clean_txt = re.sub(r'\[IMG:.*?\]', '', corps).strip()
-            paras = [p.strip() for p in clean_txt.split('\n') if p.strip()]
-            
-            ajouter_slide_texte(prs, titre, paras, False, p_img)
-            
-    # Corrections (style épuré)
-    corriges = formateur_txt.split('###')
-    for corr in corriges:
-        if len(corr.strip()) > 10:
-            lines = corr.strip().split('\n')
-            paras = [p.strip() for p in lines[1:] if p.strip()]
-            ajouter_slide_texte(prs, lines[0].strip(), paras, True)
-            
+    for section in cours_dict:
+        ajouter_paire_slides(
+            prs, 
+            section['titre'], 
+            section['question'], 
+            section['reponse'], 
+            section.get('img')
+        )
+        
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
     return buf
 
 # 3. INTERFACE
-st.set_page_config(page_title="Générateur de cours CFA", layout="wide")
-st.title("🛠️ Générateur de cours CFA")
+st.set_page_config(page_title="Générateur de cours", layout="wide")
+st.title("🛠️ Générateur de cours")
 
-if 'liste' not in st.session_state:
-    st.session_state.liste = ["BP Boucher", "BP Boulanger", "Bac Pro Maintenance Véhicule", "BTS Maintenance Véhicule", "CAP EPC", "BP Coiffure", "AMLHR"]
+diplome = st.selectbox("Diplôme :", ["BP Boucher", "BP Boulanger", "Bac Pro Maintenance", "BTS Maintenance", "CAP EPC", "BP Coiffure", "AMLHR"])
+sujet = st.text_input("Sujet de la leçon :")
+lieu = st.text_input("Lieu du scénario :", value="Chartres")
 
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    nouveau = st.text_input("Nouveau diplôme :")
-    if st.button("Ajouter") and nouveau:
-        st.session_state.liste.append(nouveau)
-        st.rerun()
-
-col1, col2 = st.columns(2)
-with col1:
-    diplome = st.selectbox("Diplôme :", st.session_state.liste)
-    sujet = st.text_input("Sujet de la leçon :", placeholder="ex: Le pétrissage de la pâte")
-with col2:
-    lieu = st.text_input("Lieu du scénario :", value="Chartres")
-
-if st.button("🚀 GÉNÉRER LE PACK COMPLET"):
+if st.button("🚀 GÉNÉRER LE COURS INTERACTIF"):
     if sujet:
-        with st.spinner("Gomme magique activée, illustrations cartoon en cours..."):
+        with st.spinner("Préparation du duel pédagogique..."):
             moteur = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods][0]
             model = genai.GenerativeModel(moteur)
             
-            prompt = f"""Expert pédagogie CFA Chartres. Cours 60min pour {diplome} sur {sujet}. 
-            Ancrage référentiel officiel {diplome} (codes C1, S2...). Ton ludique, humour, à {lieu}.
+            prompt = f"""Expert pédagogique CFA Chartres. Sujet: {sujet} pour {diplome} à {lieu}.
+            Crée un cours sous forme de DUELS (Question puis Réponse).
             
-            PARTIE APPRENTI :
-            ### 1. Accroche [IMG: colorful friendly cartoon illustration of {sujet}]
-            ### 2. Référentiel (Compétences ciblées)
-            ### 3. Mission Pro (À {lieu}) [IMG: happy cartoon illustration of working on {sujet}]
-            ### 4. Exercice d'Application (Énoncé)
-            ### 5. Quiz QCM (3 questions)
-            ### 6. Vrai ou Faux (5 affirmations)
-            ### 7. Travail en Autonomie (60 min)
-            ### 8. Synthèse
+            Format de réponse obligatoire par section :
+            SECTION: [Titre de la section]
+            IMAGE: [Description cartoon]
+            QUESTION: [Enoncé du défi ou de la question pour l'apprenti]
+            REPONSE: [La correction détaillée pour le formateur]
+            ### (Utilise ### pour séparer les duels)
             
-            [SEP_FORMATEUR]
-            PARTIE FORMATEUR (CORRIGÉS ET CONSEILS) :
-            ### 1. Corrigé Exercice
-            ### 2. Réponses Quiz et Vrai/Faux
-            ### 3. Conseils pédagogiques
+            Prévoyez 5 duels : 
+            1. L'Accroche (Scénario humour)
+            2. La Mission (Problème technique ou de gestion)
+            3. Le Quiz QCM
+            4. Le Vrai ou Faux
+            5. L'Exercice de Synthèse
             """
             
-            res_brut = model.generate_content(prompt).text
-            parts = res_brut.split('[SEP_FORMATEUR]')
-            cours_brut = parts[0]
-            formateur_txt = parts[1] if len(parts)>1 else ""
+            res = model.generate_content(prompt).text
+            st.markdown(res) # Affichage pour contrôle
             
-            # GOMME MAGIQUE pour l'affichage écran Streamlit
-            cours_display = re.sub(r'\[IMG:.*?\]', '', cours_brut).strip()
-            
-            t1, t2 = st.tabs(["📖 Cours Propre", "👨‍🏫 Corrigés"])
-            t1.markdown(cours_display); t2.markdown(formateur_txt)
-            
-            file = generer_pptx_v12(diplome, sujet, cours_brut, formateur_txt)
-            st.download_button("📥 Télécharger le PowerPoint Studio V12", file, f"Cours_{sujet}.pptx")
+            # Parsing intelligent
+            duels = res.split('###')
+            data_cours = []
+            for d in duels:
+                if "SECTION:" in d:
+                    try:
+                        titre = re.search(r"SECTION:(.*)", d).group(1).strip()
+                        img = re.search(r"IMAGE:(.*)", d).group(1).strip()
+                        ques = re.search(r"QUESTION:([\s\S]*?)REPONSE:", d).group(1).strip()
+                        rep = re.search(r"REPONSE:([\s\S]*)", d).group(1).strip()
+                        data_cours.append({'titre': titre, 'question': ques, 'reponse': rep, 'img': img})
+                    except: pass
+
+            file = generer_pptx_interactif(data_cours)
+            st.download_button("📥 Télécharger le PowerPoint Interactif", file, f"Duel_{sujet}.pptx")
